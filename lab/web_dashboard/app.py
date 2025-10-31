@@ -120,7 +120,7 @@ def upload_rsa():
     # if n.bit_length() > 64:
     #     return respond(f"Key too large ({n.bit_length()} bits). No factoring attempted.", ok=True, code=200)
 
-    res = fermat_factor(n, max_steps=2_000_000_000)
+    res = fermat_factor(n, max_steps=2_000_000_000_000)
     if res is None:
         return respond("Fermat did not find factors within step limit.", ok=True, code=200)
 
