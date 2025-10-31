@@ -2,348 +2,404 @@
 <html lang="en">
 
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Crypto Lab — Weak Key Demo</title>
-    <!-- Bootstrap -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body {
-            padding-top: 2.5rem;
-        }
-        
-        .warning {
-            border-left: 4px solid #dc3545;
-            background: #fff5f5;
-            padding: .75rem 1rem;
-        }
-        
-        pre.pem {
-            max-height: 180px;
-            overflow: auto;
-            background: #f8f9fa;
-            padding: .5rem;
-        }
-        
-        .small-muted {
-            font-size: .9rem;
-            color: #6c757d;
-        }
-        
-        .mono {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Crypto Lab — Weak Key Demo</title>
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { padding-top: 2.5rem; }
+    .warning { border-left: 4px solid #dc3545; background: #fff5f5; padding: .75rem 1rem; }
+    pre.pem { max-height: 180px; overflow: auto; background: #f8f9fa; padding: .5rem; }
+    .small-muted { font-size: .9rem; color: #6c757d; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+  </style>
 </head>
 
 <body>
-    <div class="container">
+  <div class="container">
 
-        <header class="mb-4">
-            <h1 class="h3">Crypto Lab — Weak RSA / ECC Demo</h1>
-        </header>
+    <header class="mb-4">
+      <h1 class="h3">Crypto Lab — Weak RSA / ECC Demo</h1>
+    </header>
 
-        <!-- MESSAGES AREA (moved from <head>) -->
-        <div id="msg_area" class="mb-3"></div>
+    <!-- Inline AJAX message area -->
+    <div id="msg_area" class="mb-3"></div>
 
-        <div class="row">
-            <div class="col-md-8">
+    <div class="row">
+      <div class="col-md-8">
 
-                <!-- Flash messages (server-side fallback) -->
-                {% with messages = get_flashed_messages() %} {% if messages %}
-                <div class="mb-3">
-                    {% for m in messages %}
-                    <div class="alert alert-info" role="alert">{{ m }}</div>
-                    {% endfor %}
+        <!-- Flash messages (server-side fallback) -->
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="mb-3">
+          {% for m in messages %}
+          <div class="alert alert-info" role="alert">{{ m }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        <!-- RSA form -->
+        <div class="card mb-3">
+          <div class="card-header"><strong>1) RSA - Upload PEM public key (lab only)</strong></div>
+          <div class="card-body">
+            <form id="form_upload_rsa" method="post" action="{{ url_for('upload_rsa') }}">
+              <div class="mb-2">
+                <label for="pem_rsa" class="form-label">Paste RSA public key (PEM)</label>
+                <textarea id="pem_rsa" name="pem" class="form-control mono" rows="6" placeholder="-----BEGIN PUBLIC KEY----- ..."></textarea>
+              </div>
+
+              <div class="d-flex flex-wrap gap-2 align-items-end mb-2">
+                <button class="btn btn-primary" type="submit">Check &amp; attempt Fermat (toy only)</button>
+
+                <!-- Toy RSA generator controls -->
+                <div class="ms-auto"></div>
+                <div>
+                  <label class="form-label small mb-1">Mode</label>
+                  <select id="rsa_mode" class="form-select form-select-sm">
+                    <option value="strong" selected>strong (gap)</option>
+                    <option value="weak">weak (close)</option>
+                  </select>
                 </div>
-                {% endif %} {% endwith %}
-
-                <!-- RSA form -->
-                <div class="card mb-3">
-                    <div class="card-header"><strong>1) RSA - Upload PEM public key (lab only)</strong></div>
-                    <div class="card-body">
-                        <form id="form_upload_rsa" method="post" action="{{ url_for('upload_rsa') }}">
-                            <div class="mb-2">
-                                <label for="pem_rsa" class="form-label">Paste RSA public key (PEM)</label>
-                                <textarea id="pem_rsa" name="pem" class="form-control" rows="6" placeholder="-----BEGIN PUBLIC KEY----- ..."></textarea>
-                            </div>
-                            <button class="btn btn-primary" type="submit">Check & attempt Fermat (toy only)</button>
-                            <div class="mt-2 small-muted">Refuses keys &gt; 64 bits. For demonstration, use the built-in toy generator (see README).</div>
-                        </form>
-                    </div>
+                <div>
+                  <label class="form-label small mb-1">bits (p,q)</label>
+                  <input id="rsa_bits" type="number" min="8" max="64" step="1" value="32" class="form-control form-control-sm mono">
                 </div>
-
-                <!-- ECC PEM form -->
-                <div class="card mb-3">
-                    <div class="card-header"><strong>2) ECC - Upload PEM public key (lab only)</strong></div>
-                    <div class="card-body">
-                        <form id="form_upload_ecc" method="post" action="{{ url_for('upload_ecc') }}">
-                            <div class="mb-2">
-                                <label for="pem_ecc" class="form-label">Paste EC public key (PEM)</label>
-                                <textarea id="pem_ecc" name="pem" class="form-control" rows="6" placeholder="-----BEGIN PUBLIC KEY----- ..."></textarea>
-                            </div>
-                            <button class="btn btn-primary" type="submit">Parse (toy only)</button>
-                            <div class="mt-2 small-muted">This parses the PEM and will refuse to proceed if the curve/key_size &gt; 64 bits. Automatic attacks require explicit toy params below.</div>
-                        </form>
-                    </div>
+                <div id="wrap_min_gap">
+                  <label class="form-label small mb-1">min_gap</label>
+                  <input id="rsa_min_gap" type="number" min="1" value="4096" class="form-control form-control-sm mono">
                 </div>
-
-                <!-- Generate ECC PEM (named curve) -->
-                <div class="card mb-3">
-                    <div class="card-header"><strong>2a) Generate ECC PEM (named curve)</strong></div>
-                    <div class="card-body">
-                        <p class="small-muted mb-2">
-                            Generates an interoperable EC keypair on <span class="mono">secp256r1 (P-256)</span> and displays PEMs. Use this to test the “Upload ECC PEM” parser above. The attack demo will (correctly) refuse because the curve is &gt; 64
-                            bits.
-                        </p>
-                        <div class="mb-2">
-                            <button id="btn_gen_pem_ecc" class="btn btn-outline-secondary">Generate ECC PEM (P-256)</button>
-                            <span id="gen_pem_note" class="ms-2 small text-muted"></span>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-6">
-                                <label class="form-label">Public Key (PEM)</label>
-                                <pre id="pem_ecc_pub" class="pem mono"></pre>
-                                <button class="btn btn-sm btn-outline-primary" type="button" data-copy-target="#pem_ecc_pub">Copy public PEM</button>
-                                <button class="btn btn-sm btn-outline-secondary ms-2" type="button" data-insert-target="#pem_ecc">Paste into Upload box</button>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Private Key (PEM)</label>
-                                <pre id="pem_ecc_priv" class="pem mono"></pre>
-                                <button class="btn btn-sm btn-outline-primary" type="button" data-copy-target="#pem_ecc_priv">Copy private PEM</button>
-                            </div>
-                        </div>
-                    </div>
+                <div id="wrap_closeness" style="display:none">
+                  <label class="form-label small mb-1">closeness</label>
+                  <input id="rsa_closeness" type="number" min="1" value="16" class="form-control form-control-sm mono">
                 </div>
+                <button type="button" id="btn_gen_toy_rsa" class="btn btn-outline-secondary">
+                  Generate toy RSA (public PEM)
+                </button>
+              </div>
 
-                <!-- Toy ECC generator + attack -->
-                <div class="card mb-3">
-                    <div class="card-header"><strong>3) Toy ECC demo (canned example)</strong></div>
-                    <div class="card-body">
-                        <p class="small-muted">Use the canned toy ECC parameters (server-generated) and run the brute-force demo that finds <code>d mod r</code>. These are intentionally tiny values.</p>
-
-                        <div class="mb-2">
-                            <button id="btn_gen_toy" class="btn btn-outline-secondary">Generate Toy ECC (AJAX)</button>
-                            <span id="gen_note" class="ms-2 small text-muted"></span>
-                        </div>
-
-                        <form id="attackToyForm" method="post" action="{{ url_for('attack_toy_ecc') }}">
-                            <div class="row g-2">
-                                <div class="col-md-3">
-                                    <label class="form-label">p</label>
-                                    <input id="p" name="p" class="form-control form-control-sm" />
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">a</label>
-                                    <input id="a" name="a" class="form-control form-control-sm" />
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">b</label>
-                                    <input id="b" name="b" class="form-control form-control-sm" />
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">r (order)</label>
-                                    <input id="r" name="r" class="form-control form-control-sm" />
-                                </div>
-                            </div>
-
-                            <div class="row g-2 mt-2">
-                                <div class="col-md-3">
-                                    <label class="form-label">Gx</label>
-                                    <input id="Gx" name="Gx" class="form-control form-control-sm" />
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">Gy</label>
-                                    <input id="Gy" name="Gy" class="form-control form-control-sm" />
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">Qx</label>
-                                    <input id="Qx" name="Qx" class="form-control form-control-sm" />
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">Qy</label>
-                                    <input id="Qy" name="Qy" class="form-control form-control-sm" />
-                                </div>
-                            </div>
-
-                            <div class="mt-3">
-                                <button id="btn_attack_toy" class="btn btn-danger" type="submit">Run toy ECC attack (brute-force d mod r)</button>
-                                <button id="btn_clear" type="button" class="btn btn-outline-secondary ms-2">Clear</button>
-                            </div>
-                            <div class="mt-2 small-muted">Safety limits: server will refuse field sizes &gt; 64 bits, and will refuse r &gt; 10000.</div>
-                        </form>
-                    </div>
-                </div>
-
-            </div>
-
-            <div class="col-md-4">
-                <div class="card mb-3">
-                    <div class="card-header"><strong>Quick guide</strong></div>
-                    <div class="card-body small">
-                        <ol>
-                            <li>Use <strong>Generate ECC PEM</strong> to get a standard P-256 keypair, then test the parser in section 2.</li>
-                            <li>Use <strong>Generate Toy ECC</strong> to get tiny parameters for the brute-force demo.</li>
-                            <li>For RSA, paste a tiny RSA <code>N</code> PEM (≤64 bits) and run the Fermat demo.</li>
-                        </ol>
-                        <p class="mb-0"><strong>Tip:</strong> Keep the app on localhost and do not expose it publicly.</p>
-                    </div>
-                </div>
-            </div>
+              <div class="mt-2 small-muted">
+                Refuses keys &gt; 64 bits. Use the **Generate toy RSA** button to auto-fill a PEM that this lab can process.
+              </div>
+            </form>
+          </div>
         </div>
 
+        <!-- ECC PEM form -->
+        <div class="card mb-3">
+          <div class="card-header"><strong>2) ECC - Upload PEM public key (lab only)</strong></div>
+          <div class="card-body">
+            <form id="form_upload_ecc" method="post" action="{{ url_for('upload_ecc') }}">
+              <div class="mb-2">
+                <label for="pem_ecc" class="form-label">Paste EC public key (PEM)</label>
+                <textarea id="pem_ecc" name="pem" class="form-control mono" rows="6" placeholder="-----BEGIN PUBLIC KEY----- ..."></textarea>
+              </div>
+              <button class="btn btn-primary" type="submit">Parse (toy only)</button>
+              <div class="mt-2 small-muted">
+                This parses the PEM and will refuse to proceed if the curve/key_size &gt; 64 bits. Automatic attacks require explicit toy params below.
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Generate ECC PEM (named curve) -->
+        <div class="card mb-3">
+          <div class="card-header"><strong>2a) Generate ECC PEM (named curve)</strong></div>
+          <div class="card-body">
+            <p class="small-muted mb-2">
+              Generates an interoperable EC keypair on <span class="mono">secp256r1 (P-256)</span> and displays PEMs.
+              Use this to test the “Upload ECC PEM” parser above. The attack demo will (correctly) refuse because the curve is &gt; 64 bits.
+            </p>
+            <div class="mb-2">
+              <button id="btn_gen_pem_ecc" class="btn btn-outline-secondary">Generate ECC PEM (P-256)</button>
+              <span id="gen_pem_note" class="ms-2 small text-muted"></span>
+            </div>
+
+            <div class="row">
+              <div class="col-md-6">
+                <label class="form-label">Public Key (PEM)</label>
+                <pre id="pem_ecc_pub" class="pem mono"></pre>
+                <button class="btn btn-sm btn-outline-primary" type="button" data-copy-target="#pem_ecc_pub">Copy public PEM</button>
+                <button class="btn btn-sm btn-outline-secondary ms-2" type="button" data-insert-target="#pem_ecc">Paste into Upload box</button>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Private Key (PEM)</label>
+                <pre id="pem_ecc_priv" class="pem mono"></pre>
+                <button class="btn btn-sm btn-outline-primary" type="button" data-copy-target="#pem_ecc_priv">Copy private PEM</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Toy ECC generator + attack -->
+        <div class="card mb-3">
+          <div class="card-header"><strong>3) Toy ECC demo (canned example)</strong></div>
+          <div class="card-body">
+            <p class="small-muted">Use the canned toy ECC parameters (server-generated) and run the brute-force demo that finds <code>d mod r</code>. These are intentionally tiny values.</p>
+
+            <div class="mb-2">
+              <button id="btn_gen_toy" class="btn btn-outline-secondary">Generate Toy ECC (AJAX)</button>
+              <span id="gen_note" class="ms-2 small text-muted"></span>
+            </div>
+
+            <form id="attackToyForm" method="post" action="{{ url_for('attack_toy_ecc') }}">
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <label class="form-label">p</label>
+                  <input id="p" name="p" class="form-control form-control-sm mono" />
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">a</label>
+                  <input id="a" name="a" class="form-control form-control-sm mono" />
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">b</label>
+                  <input id="b" name="b" class="form-control form-control-sm mono" />
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">r (order)</label>
+                  <input id="r" name="r" class="form-control form-control-sm mono" />
+                </div>
+              </div>
+
+              <div class="row g-2 mt-2">
+                <div class="col-md-3">
+                  <label class="form-label">Gx</label>
+                  <input id="Gx" name="Gx" class="form-control form-control-sm mono" />
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Gy</label>
+                  <input id="Gy" name="Gy" class="form-control form-control-sm mono" />
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Qx</label>
+                  <input id="Qx" name="Qx" class="form-control form-control-sm mono" />
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Qy</label>
+                  <input id="Qy" name="Qy" class="form-control form-control-sm mono" />
+                </div>
+              </div>
+
+              <div class="mt-3">
+                <button id="btn_attack_toy" class="btn btn-danger" type="submit">Run toy ECC attack (brute-force d mod r)</button>
+                <button id="btn_clear" type="button" class="btn btn-outline-secondary ms-2">Clear</button>
+              </div>
+              <div class="mt-2 small-muted">Safety limits: server will refuse field sizes &gt; 64 bits, and will refuse r &gt; 10000.</div>
+            </form>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="col-md-4">
+        <div class="card mb-3">
+          <div class="card-header"><strong>Quick guide</strong></div>
+          <div class="card-body small">
+            <ol>
+              <li>Use <strong>Generate ECC PEM</strong> to get a standard P-256 keypair, then test the parser in section 2.</li>
+              <li>Use <strong>Generate Toy ECC</strong> to get tiny parameters for the brute-force demo.</li>
+              <li>For RSA, click <strong>Generate toy RSA</strong> to auto-fill a tiny PEM, then run Fermat.</li>
+            </ol>
+            <p class="mb-0"><strong>Tip:</strong> Keep the app on localhost and do not expose it publicly.</p>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <script>
-        /* ===== Toy ECC fetch/populate ===== */
-        document.getElementById('btn_gen_toy').addEventListener('click', async function() {
-            const btn = this;
-            btn.disabled = true;
-            document.getElementById('gen_note').textContent = 'Generating...';
-            try {
-                const resp = await fetch('{{ url_for("generate_toy_ecc") }}');
-                if (!resp.ok) throw new Error('Server error: ' + resp.status);
-                const js = await resp.json();
-                if (js.status !== 'ok') throw new Error(js.msg || 'failed');
-                const t = js.toy;
-                ['p', 'a', 'b', 'Gx', 'Gy', 'r', 'Qx', 'Qy'].forEach(k => {
-                    const el = document.getElementById(k);
-                    if (el) el.value = t[k];
-                });
-                document.getElementById('gen_note').textContent = 'Toy ECC params loaded into the form below.';
-            } catch (err) {
-                console.error(err);
-                document.getElementById('gen_note').textContent = 'Error: ' + err.message;
-                alert('Could not generate toy ECC: ' + err.message);
-            } finally {
-                btn.disabled = false;
-                setTimeout(() => document.getElementById('gen_note').textContent = '', 6000);
-            }
+  </div>
+
+  <script>
+    /* ===== RSA toy generator UI: show/hide param fields by mode ===== */
+    const selMode = document.getElementById('rsa_mode');
+    const wrapMinGap = document.getElementById('wrap_min_gap');
+    const wrapClose = document.getElementById('wrap_closeness');
+    selMode.addEventListener('change', () => {
+      const m = selMode.value;
+      wrapMinGap.style.display = (m === 'strong') ? '' : 'none';
+      wrapClose.style.display = (m === 'weak') ? '' : 'none';
+    });
+
+    /* ===== Toy ECC fetch/populate ===== */
+    document.getElementById('btn_gen_toy').addEventListener('click', async function () {
+      const btn = this;
+      btn.disabled = true;
+      document.getElementById('gen_note').textContent = 'Generating...';
+      try {
+        const resp = await fetch('{{ url_for("generate_toy_ecc") }}');
+        if (!resp.ok) throw new Error('Server error: ' + resp.status);
+        const js = await resp.json();
+        if (js.status !== 'ok') throw new Error(js.msg || 'failed');
+        const t = js.toy;
+        ['p', 'a', 'b', 'Gx', 'Gy', 'r', 'Qx', 'Qy'].forEach(k => {
+          const el = document.getElementById(k);
+          if (el) el.value = t[k];
         });
+        document.getElementById('gen_note').textContent = 'Toy ECC params loaded into the form below.';
+      } catch (err) {
+        console.error(err);
+        document.getElementById('gen_note').textContent = 'Error: ' + err.message;
+        alert('Could not generate toy ECC: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        setTimeout(() => document.getElementById('gen_note').textContent = '', 6000);
+      }
+    });
 
-        /* ===== Clear toy form ===== */
-        document.getElementById('btn_clear').addEventListener('click', function() {
-            ['p', 'a', 'b', 'Gx', 'Gy', 'r', 'Qx', 'Qy'].forEach(k => {
-                const el = document.getElementById(k);
-                if (el) el.value = '';
-            });
-            const cb = document.getElementById('accept_toy');
-            if (cb) cb.checked = false;
-        });
+    /* ===== Clear toy form ===== */
+    document.getElementById('btn_clear').addEventListener('click', function () {
+      ['p', 'a', 'b', 'Gx', 'Gy', 'r', 'Qx', 'Qy'].forEach(k => {
+        const el = document.getElementById(k);
+        if (el) el.value = '';
+      });
+    });
 
-        /* ===== Generate ECC PEM (P-256) ===== */
-        const btnGenPem = document.getElementById('btn_gen_pem_ecc');
-        const pubBox = document.getElementById('pem_ecc_pub');
-        const privBox = document.getElementById('pem_ecc_priv');
-        const genPemNote = document.getElementById('gen_pem_note');
+    /* ===== Generate ECC PEM (P-256) ===== */
+    const btnGenPem = document.getElementById('btn_gen_pem_ecc');
+    const pubBox = document.getElementById('pem_ecc_pub');
+    const privBox = document.getElementById('pem_ecc_priv');
+    const genPemNote = document.getElementById('gen_pem_note');
 
-        btnGenPem.addEventListener('click', async function() {
-            btnGenPem.disabled = true;
-            genPemNote.textContent = 'Generating...';
-            pubBox.textContent = '';
-            privBox.textContent = '';
-            try {
-                const resp = await fetch('{{ url_for("generate_named_ecc_pem") }}');
-                if (!resp.ok) throw new Error('Server error: ' + resp.status);
-                const js = await resp.json();
-                if (js.status !== 'ok') throw new Error(js.msg || 'failed');
-                pubBox.textContent = js.public_key_pem || '';
-                privBox.textContent = js.private_key_pem || '';
-                genPemNote.textContent = `Curve: ${js.curve || 'unknown'}. PEMs generated.`;
-            } catch (e) {
-                console.error(e);
-                genPemNote.textContent = 'Error: ' + e.message;
-                alert('Could not generate ECC PEM: ' + e.message);
-            } finally {
-                btnGenPem.disabled = false;
-                setTimeout(() => genPemNote.textContent = '', 6000);
-            }
-        });
+    btnGenPem.addEventListener('click', async function () {
+      btnGenPem.disabled = true;
+      genPemNote.textContent = 'Generating...';
+      pubBox.textContent = '';
+      privBox.textContent = '';
+      try {
+        const resp = await fetch('{{ url_for("generate_named_ecc_pem") }}');
+        if (!resp.ok) throw new Error('Server error: ' + resp.status);
+        const js = await resp.json();
+        if (js.status !== 'ok') throw new Error(js.msg || 'failed');
+        pubBox.textContent = js.public_key_pem || '';
+        privBox.textContent = js.private_key_pem || '';
+        genPemNote.textContent = `Curve: ${js.curve || 'unknown'}. PEMs generated.`;
+      } catch (e) {
+        console.error(e);
+        genPemNote.textContent = 'Error: ' + e.message;
+        alert('Could not generate ECC PEM: ' + e.message);
+      } finally {
+        btnGenPem.disabled = false;
+        setTimeout(() => genPemNote.textContent = '', 6000);
+      }
+    });
 
-        /* ===== Copy & paste helpers ===== */
-        document.querySelectorAll('button[data-copy-target]').forEach(btn => {
-            btn.addEventListener('click', async() => {
-                const target = document.querySelector(btn.getAttribute('data-copy-target'));
-                if (!target) return;
-                try {
-                    await navigator.clipboard.writeText(target.textContent);
-                    const was = btn.textContent;
-                    btn.textContent = 'Copied!';
-                    setTimeout(() => btn.textContent = was, 1200);
-                } catch {
-                    alert('Copy failed; please select & copy manually.');
-                }
-            });
-        });
-
-        document.querySelectorAll('button[data-insert-target]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const target = document.querySelector(btn.getAttribute('data-insert-target'));
-                if (target && pubBox.textContent) target.value = pubBox.textContent;
-            });
-        });
-
-        /* ===== Inline messaging ===== */
-        function showMessage(status, text) {
-            const box = document.getElementById('msg_area');
-            const cls = (status === 'ok') ? 'alert-success' : 'alert-danger';
-            box.innerHTML = `<div class="alert ${cls}" role="alert">${text}</div>`;
+    /* ===== Copy & paste helpers ===== */
+    document.querySelectorAll('button[data-copy-target]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const target = document.querySelector(btn.getAttribute('data-copy-target'));
+        if (!target) return;
+        try {
+          await navigator.clipboard.writeText(target.textContent);
+          const was = btn.textContent;
+          btn.textContent = 'Copied!';
+          setTimeout(() => btn.textContent = was, 1200);
+        } catch {
+          alert('Copy failed; please select & copy manually.');
         }
+      });
+    });
 
-        /* ===== AJAX form helper ===== */
-        function ajaxifyForm(formId, extraChecksFn) {
-            const form = document.getElementById(formId);
-            if (!form) return;
+    document.querySelectorAll('button[data-insert-target]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = document.querySelector(btn.getAttribute('data-insert-target'));
+        if (target && pubBox.textContent) target.value = pubBox.textContent;
+      });
+    });
 
-            form.addEventListener('submit', async(evt) => {
-                if (extraChecksFn && extraChecksFn(evt) === false) return;
+    /* ===== Inline messaging ===== */
+    function showMessage(status, text) {
+      const box = document.getElementById('msg_area');
+      const cls = (status === 'ok') ? 'alert-success' : 'alert-danger';
+      box.innerHTML = `<div class="alert ${cls}" role="alert">${text}</div>`;
+    }
 
-                evt.preventDefault(); // no page reload
-                const submitBtn = form.querySelector('button[type="submit"]');
-                if (submitBtn) submitBtn.disabled = true;
+    /* ===== AJAX form helper ===== */
+    function ajaxifyForm(formId, extraChecksFn) {
+      const form = document.getElementById(formId);
+      if (!form) return;
 
-                try {
-                    const resp = await fetch(form.action, {
-                        method: 'POST',
-                        body: new FormData(form),
-                        headers: {
-                            'X-Requested-With': 'XMLHttpRequest',
-                            'Accept': 'application/json'
-                        }
-                    });
+      form.addEventListener('submit', async (evt) => {
+        if (extraChecksFn && extraChecksFn(evt) === false) return;
 
-                    let payload, text;
-                    const ct = resp.headers.get('Content-Type') || '';
-                    if (ct.includes('application/json')) {
-                        payload = await resp.json();
-                    } else {
-                        text = await resp.text();
-                    }
+        evt.preventDefault(); // no page reload
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
 
-                    if (!resp.ok) {
-                        showMessage('error', (payload && (payload.msg || payload.message)) || text || `HTTP ${resp.status}`);
-                    } else {
-                        const msg = payload && (payload.message || payload.msg) || 'Done.';
-                        const status = payload && payload.status || 'ok';
-                        showMessage(status, msg);
-                    }
-                } catch (e) {
-                    showMessage('error', e.message || 'Network error');
-                } finally {
-                    if (submitBtn) submitBtn.disabled = false;
-                }
-            });
+        try {
+          const resp = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            headers: {
+              'X-Requested-With': 'XMLHttpRequest',
+              'Accept': 'application/json'
+            }
+          });
+
+          let payload, text;
+          const ct = resp.headers.get('Content-Type') || '';
+          if (ct.includes('application/json')) {
+            payload = await resp.json();
+          } else {
+            text = await resp.text();
+          }
+
+          if (!resp.ok) {
+              showMessage('error', (payload && (payload.msg || payload.message)) || text || `HTTP ${resp.status}`);
+            } else {
+              const msg =
+                (payload && (payload.message || payload.msg)) ||
+                (text && text.substring(0, 500)) ||  // <— show text fallback instead of "Done."
+                'Done.';
+              const status = (payload && payload.status) || 'ok';
+              showMessage(status, msg);
+            }
+
+        } catch (e) {
+          showMessage('error', e.message || 'Network error');
+        } finally {
+          if (submitBtn) submitBtn.disabled = false;
         }
+      });
+    }
 
-        /* Hook up forms (no refresh) */
-        ajaxifyForm('form_upload_rsa');
-        ajaxifyForm('form_upload_ecc');
-        ajaxifyForm('attackToyForm', (evt) => {
-            return true;
-        });
-    </script>
+    /* Hook up forms (no refresh) */
+    ajaxifyForm('form_upload_rsa');
+    ajaxifyForm('form_upload_ecc');
+    ajaxifyForm('attackToyForm', () => true);
+
+    /* ===== Generate toy RSA (public PEM) via /generate_toy_rsa_pub ===== */
+    const btnGenToyRSA = document.getElementById('btn_gen_toy_rsa');
+    const taRSA = document.getElementById('pem_rsa');
+    btnGenToyRSA.addEventListener('click', async () => {
+      btnGenToyRSA.disabled = true;
+      const mode = document.getElementById('rsa_mode').value;     // 'weak' or 'strong'
+      const bits = document.getElementById('rsa_bits').value || '32';
+      const min_gap = document.getElementById('rsa_min_gap').value || '4096';
+      const closeness = document.getElementById('rsa_closeness').value || '16';
+
+      const params = new URLSearchParams({ mode, bits, e: '65537' });
+      if (mode === 'weak') params.set('closeness', closeness);
+      else params.set('min_gap', min_gap);
+
+      try {
+        const resp = await fetch('/generate_toy_rsa_pub?' + params.toString(), { cache: 'no-store' });
+        const text = await resp.text();
+        if (!resp.ok) {
+          taRSA.value = `# Error:\n${text}`;
+          showMessage('error', 'Toy RSA generation failed.');
+        } else {
+          taRSA.value = text; // paste PEM
+          showMessage('ok', 'Toy RSA public PEM generated and inserted.');
+        }
+      } catch (err) {
+        taRSA.value = `# Network error: ${err}`;
+        showMessage('error', err.message || 'Network error.');
+      } finally {
+        btnGenToyRSA.disabled = false;
+      }
+    });
+  </script>
 
 </body>
-
 </html>

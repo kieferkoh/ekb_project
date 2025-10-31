@@ -2,8 +2,10 @@
 from flask import Flask, request, render_template, flash, redirect, url_for, jsonify
 from lab.rsa.fermat_factor import fermat_factor
 from lab.rsa.weak_rsa_gen import gen_weak_rsa
-from ..ecc.weak_ecc_gen import safe_int_from_form, brute_force_d_mod_r, make_toy_curve_and_key
+from lab.ecc.weak_ecc_gen import safe_int_from_form, brute_force_d_mod_r, make_toy_curve_and_key
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa as rsa_mod
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import (
     Encoding, PrivateFormat, PublicFormat, NoEncryption, load_pem_public_key
@@ -24,8 +26,18 @@ def is_too_large_bitlen(n, limit=128):
     return n.bit_length() > limit
 
 def wants_json():
-    return request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
-           request.accept_mimetypes.best == 'application/json'
+    return (
+        request.headers.get("Accept","").lower().startswith("application/json")
+        or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    )
+def _build_public_pem(n: int, e: int = 65537) -> bytes:
+    pubnums = rsa_mod.RSAPublicNumbers(e, n)
+    pubkey = pubnums.public_key()
+    return pubkey.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+
 
 # -----------------------
 # Routes
@@ -36,35 +48,84 @@ def index():
     return render_template("index.html")
 
 # --- RSA endpoint (existing) ---
-@app.route("/upload_rsa", methods=["POST"])
+@app.route("/generate_toy_rsa_pub", methods=["GET"])
+def generate_toy_rsa_pub():
+    """
+    Return ONLY a toy RSA public key PEM.
+    Query params:
+      mode=weak|strong (default strong)
+      bits=<int>        (default 32; keep <=64 for the lab)
+      closeness=<int>   (weak mode; default 16)
+      min_gap=<int>     (strong mode; default 4096)
+      e=<int>           (default 65537)
+    """
+    mode = request.args.get("mode", "strong").lower()
+    bits = int(request.args.get("bits", 32))
+    e    = int(request.args.get("e", 65537))
+
+    # Lab safety: keep primes tiny; your upload route already rejects >64 bits anyway
+    if bits < 8 or bits > 64:
+        return ("Toy generator: bits must be between 8 and 64.", 400,
+                {"Content-Type": "text/plain; charset=utf-8"})
+
+    try:
+        if mode == "weak":
+            closeness = int(request.args.get("closeness", 16))
+            # import here to avoid circulars at import time
+            from lab.rsa.weak_rsa_gen import gen_weak_rsa
+            key = gen_weak_rsa(bits=bits, closeness=closeness)
+        else:
+            min_gap = int(request.args.get("min_gap", 4096))
+            from lab.rsa.weak_rsa_gen import gen_strong_rsa
+            key = gen_strong_rsa(bits=bits, min_gap=min_gap, e=e)
+
+        n = int(key["n"])
+        e = int(key["e"])
+        pub_pem = _build_public_pem(n, e).decode()
+
+        # Return text/plain PEM so the frontend can paste straight into <textarea>
+        headers = {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-store"
+        }
+        return (pub_pem, 200, headers)
+
+    except Exception as ex:
+        return (f"Error generating toy RSA: {ex}", 500,
+                {"Content-Type": "text/plain; charset=utf-8"})
+
+
+@app.post("/upload_rsa")
 def upload_rsa():
-    pem_data = request.form.get("pem")
+    pem_data = request.form.get("pem", "")
     accept = request.form.get("accept")
+
+    def respond(msg, ok=True, code=200):
+        if wants_json():
+            return jsonify({"status": "ok" if ok else "error", "message": msg}), code
+        # fallback: flash + redirect
+        flash(msg)
+        return redirect(url_for("index"))
+
+
     try:
         key = load_pem_public_key(pem_data.encode())
+        numbers = key.public_numbers()
+        n = int(numbers.n)
+        e = int(numbers.e)
     except Exception as e:
-        flash("Failed to parse PEM: "+str(e))
-        return redirect(url_for("index"))
-    # inspect key size
-    try:
-        n = key.public_numbers().n
-    except AttributeError:
-        flash("Not an RSA public key.")
-        return redirect(url_for("index"))
-    """if n.bit_length() > 64:
-        flash("Key too large for lab demo (bitlen {}). Refusing to attempt factoring.".format(n.bit_length()))
-        return redirect(url_for("index"))"""
-    # safe: run fermat
-    res = fermat_factor(n, max_steps=200000)
+        return respond(f"Failed to parse PEM: {e}", ok=False, code=400)
+
+    # Optional safety gate
+    # if n.bit_length() > 64:
+    #     return respond(f"Key too large ({n.bit_length()} bits). No factoring attempted.", ok=True, code=200)
+
+    res = fermat_factor(n, max_steps=2_000_000_000)
     if res is None:
-        flash("Fermat did not find factors within step limit; increase steps on your own lab machine")
-    else:
-        if wants_json():  # ← AJAX path
-            return jsonify({"status": "ok", 
-                            "message": f"Found factors p={res[0]}, q={res[1]} in {res[2]} steps, {res[3]:.3f}s",})
-        p,q,steps,elapsed = res
-        flash(f"Found factors p={p}, q={q} in {steps} steps, {elapsed:.3f}s")
-    return redirect(url_for("index"))
+        return respond("Fermat did not find factors within step limit.", ok=True, code=200)
+
+    p, q, steps, elapsed = res
+    return respond(f"Found factors p={p}, q={q} in {steps} steps, {elapsed:.3f}s", ok=True, code=200)
 
 # --- ECC endpoints (new) ---
 

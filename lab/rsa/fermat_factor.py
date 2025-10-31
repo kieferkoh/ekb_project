@@ -7,9 +7,6 @@ def is_square(n):
     return r*r == n
 
 def fermat_factor(n, max_steps=1_000_000):
-    # Safety: refuse large N
-    """if n.bit_length() > 64:
-        raise ValueError("Refusing to factor N > 64 bits in lab tool")"""
     a = math.isqrt(n)
     if a*a < n:
         a += 1
@@ -32,5 +29,5 @@ if __name__ == "__main__":
     key = gen_weak_rsa(bits=16, closeness=32)
     n = key['n']
     print("N=", n)
-    res = fermat_factor(n, max_steps=500000)
+    res = fermat_factor(n, max_steps=50000000)
     print(res)
