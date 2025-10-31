@@ -11,7 +11,7 @@ p = 65537  # using safe e baseline; we will create small key by specifying small
 # Use project's weak_rsa_gen to create small primes and create PEM:
 from lab.rsa.weak_rsa_gen import gen_weak_rsa  # run this from project root with package mode
 
-key = gen_weak_rsa(bits=16, closeness=16)  # returns dict with p,q,e,d,n
+key = gen_weak_rsa(bits=64, closeness=4804714275577702511)  # returns dict with p,q,e,d,n
 n = key['n']
 e = key['e']
 

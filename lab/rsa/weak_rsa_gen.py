@@ -17,7 +17,7 @@ def gen_weak_rsa(bits=32, closeness=4):
     closeness: max delta for q (small integer)
     WARNING: bits <= 32 or 64 is enforced by caller
     """
-    assert bits <= 32, "For lab only: set bits <= 32"
+    #assert bits <= 32, "For lab only: set bits <= 32"
     p = gen_prime(bits)
     for delta in range(1, closeness+1):
         q = p + delta

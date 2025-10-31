@@ -1,7 +1,7 @@
 # app.py
 from flask import Flask, request, render_template, flash, redirect, url_for, jsonify
-from ..rsa.fermat_factor import fermat_factor
-from ..rsa.weak_rsa_gen import gen_weak_rsa
+from lab.rsa.fermat_factor import fermat_factor
+from lab.rsa.weak_rsa_gen import gen_weak_rsa
 from ..ecc.weak_ecc_gen import safe_int_from_form, brute_force_d_mod_r, make_toy_curve_and_key
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -20,7 +20,7 @@ app = Flask(__name__)
 app.secret_key = "replace-in-lab"
 
 
-def is_too_large_bitlen(n, limit=64):
+def is_too_large_bitlen(n, limit=128):
     return n.bit_length() > limit
 
 def wants_json():
@@ -51,9 +51,9 @@ def upload_rsa():
     except AttributeError:
         flash("Not an RSA public key.")
         return redirect(url_for("index"))
-    if n.bit_length() > 64:
+    """if n.bit_length() > 64:
         flash("Key too large for lab demo (bitlen {}). Refusing to attempt factoring.".format(n.bit_length()))
-        return redirect(url_for("index"))
+        return redirect(url_for("index"))"""
     # safe: run fermat
     res = fermat_factor(n, max_steps=200000)
     if res is None:
