@@ -125,7 +125,7 @@ def upload_rsa():
         return respond("Fermat did not find factors within step limit.", ok=True, code=200)
 
     p, q, steps, elapsed = res
-    return respond(f"Found factors p={p}, q={q} in {steps} steps, {elapsed:.3f}s", ok=True, code=200)
+    return respond(f"Found factors p={p}, q={q}, q-p = {q-p} in {steps} steps, {elapsed:.3f}s", ok=True, code=200)
 
 # --- ECC endpoints (new) ---
 
