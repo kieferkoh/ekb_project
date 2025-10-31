@@ -1,7 +1,7 @@
 # app.py
 from flask import Flask, request, render_template, flash, redirect, url_for, jsonify
-from fermat_factor import fermat_factor
-from weak_rsa_gen import gen_weak_rsa
+from ..rsa.fermat_factor import fermat_factor
+from ..rsa.weak_rsa_gen import gen_weak_rsa
 import cryptography.hazmat.primitives.serialization as serialization
 from cryptography.hazmat.backends import default_backend
 import math
@@ -111,9 +111,6 @@ def index():
 def upload_rsa():
     pem_data = request.form.get("pem")
     accept = request.form.get("accept")
-    if accept != "on":
-        flash("You must confirm ownership of the key (lab only).")
-        return redirect(url_for("index"))
     try:
         key = serialization.load_pem_public_key(pem_data.encode(), backend=default_backend())
     except Exception as e:
@@ -146,9 +143,6 @@ def upload_ecc():
     """
     pem_data = request.form.get("pem")
     accept = request.form.get("accept")
-    if accept != "on":
-        flash("You must confirm ownership of the key (lab only).")
-        return redirect(url_for("index"))
     try:
         key = serialization.load_pem_public_key(pem_data.encode(), backend=default_backend())
     except Exception as e:
