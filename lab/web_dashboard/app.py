@@ -2,8 +2,12 @@
 from flask import Flask, request, render_template, flash, redirect, url_for, jsonify
 from ..rsa.fermat_factor import fermat_factor
 from ..rsa.weak_rsa_gen import gen_weak_rsa
-import cryptography.hazmat.primitives.serialization as serialization
+from ..ecc.weak_ecc_gen import safe_int_from_form, brute_force_d_mod_r, make_toy_curve_and_key
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.serialization import (
+    Encoding, PrivateFormat, PublicFormat, NoEncryption, load_pem_public_key
+)
 import math
 import time
 
@@ -15,88 +19,13 @@ import secrets
 app = Flask(__name__)
 app.secret_key = "replace-in-lab"
 
-# -----------------------
-# Helpers (ECC - toy)
-# -----------------------
-def safe_int_from_form(name, default=None):
-    v = request.form.get(name)
-    if v is None or v.strip() == "":
-        return default
-    return int(v.strip(), 0)  # allow hex like 0x...
 
 def is_too_large_bitlen(n, limit=64):
     return n.bit_length() > limit
 
-def brute_force_d_mod_r(curve_fp, G_point, Q_point, r_limit):
-    """
-    Brute force k in [0..r-1] such that k*G == Q on the given elliptic curve.
-    curve_fp: instance of CurveFp
-    G_point, Q_point: instances of ellipticcurve.Point
-    r_limit: integer order to brute force (must be small)
-    Returns k or None and steps/time.
-    """
-    start = time.time()
-    steps = 0
-    # naive multiply via repeated addition (use Point.__mul__ which uses fast double-and-add)
-    for k in range(r_limit):
-        steps += 1
-        if k * G_point == Q_point:
-            elapsed = time.time() - start
-            return k, steps, elapsed
-    return None, steps, time.time() - start
-
-def make_toy_curve_and_key():
-    """
-    Produce a toy curve over small prime p, a, b and a generator G with small order r.
-    We'll choose tiny fixed values for demo (p prime small).
-    """
-    # Tiny toy curve that works for demonstration (not cryptographically secure)
-    # These small values are chosen for demo; you can change them if desired.
-    p = 233  # small prime
-    a = 1
-    b = 1
-    # We will search for a small order point G on this curve
-    curve = ellipticcurve.CurveFp(p, a, b)
-
-    # brute force points to find one with small order r (e.g., <= 50)
-    max_order = 50
-    found = None
-    for x in range(1, p):
-        for y in range(1, p):
-            try:
-                P = ellipticcurve.Point(curve, x, y, 0)  # temporary order 0
-            except Exception:
-                continue
-            # compute order by repeated addition (naive)
-            R = P
-            for r in range(1, max_order+1):
-                if R.x() == P.x() and R.y() == P.y() and r == 1:
-                    pass
-                if R == ellipticcurve.INFINITY:
-                    order = r
-                    break
-                R = R + P
-            else:
-                continue
-            if 2 <= order <= max_order:
-                found = (x, y, order)
-                break
-        if found:
-            break
-
-    if not found:
-        raise RuntimeError("Could not find small-order point on this toy curve; adjust parameters")
-
-    Gx, Gy, r = found
-    G = ellipticcurve.Point(curve, Gx, Gy, r)
-    # pick a secret d in range [1, r-1]
-    d = secrets.randbelow(r-1) + 1
-    Q = d * G
-    return {
-        "p": p, "a": a, "b": b,
-        "Gx": Gx, "Gy": Gy, "r": r,
-        "d": d, "Qx": Q.x(), "Qy": Q.y()
-    }
+def wants_json():
+    return request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
+           request.accept_mimetypes.best == 'application/json'
 
 # -----------------------
 # Routes
@@ -112,7 +41,7 @@ def upload_rsa():
     pem_data = request.form.get("pem")
     accept = request.form.get("accept")
     try:
-        key = serialization.load_pem_public_key(pem_data.encode(), backend=default_backend())
+        key = load_pem_public_key(pem_data.encode())
     except Exception as e:
         flash("Failed to parse PEM: "+str(e))
         return redirect(url_for("index"))
@@ -130,11 +59,34 @@ def upload_rsa():
     if res is None:
         flash("Fermat did not find factors within step limit; increase steps on your own lab machine")
     else:
+        if wants_json():  # ← AJAX path
+            return jsonify({"status": "ok", 
+                            "message": f"Found factors p={res[0]}, q={res[1]} in {res[2]} steps, {res[3]:.3f}s",})
         p,q,steps,elapsed = res
         flash(f"Found factors p={p}, q={q} in {steps} steps, {elapsed:.3f}s")
     return redirect(url_for("index"))
 
 # --- ECC endpoints (new) ---
+
+
+@app.route("/generate_named_ecc_pem", methods=["GET"])
+def generate_named_ecc_pem():
+    # Generate standard, interoperable ECC keys (P-256)
+    sk = ec.generate_private_key(ec.SECP256R1())
+    pk = sk.public_key()
+
+    pem_priv = sk.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+    pem_pub  = pk.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+
+    # Return as JSON so the UI can display/copy them
+    return jsonify({
+        "status": "ok",
+        "curve": "secp256r1 (P-256)",
+        "private_key_pem": pem_priv.decode(),
+        "public_key_pem": pem_pub.decode(),
+        "note": "These are standard PEMs on a named curve. Your demo attack should refuse to run (key_size = 256 > 64)."
+    })
+
 @app.route("/upload_ecc", methods=["POST"])
 def upload_ecc():
     """
@@ -144,7 +96,7 @@ def upload_ecc():
     pem_data = request.form.get("pem")
     accept = request.form.get("accept")
     try:
-        key = serialization.load_pem_public_key(pem_data.encode(), backend=default_backend())
+        key = load_pem_public_key(pem_data.encode())
     except Exception as e:
         flash("Failed to parse PEM: "+str(e))
         return redirect(url_for("index"))
@@ -156,15 +108,18 @@ def upload_ecc():
         if key_size is None:
             flash("Could not determine curve key size; refusing to proceed.")
             return redirect(url_for("index"))
-        if key_size > 64:
-            flash(f"EC key size {key_size} bits is too large for lab demo. Refusing to run attacks.")
-            return redirect(url_for("index"))
+        # if key_size > 64:
+        #     flash(f"EC key size {key_size} bits is too large for lab demo. Refusing to run attacks.")
+        #     return redirect(url_for("index"))
         # If small, try to bruteforce d modulo small order if order known (cryptography may not expose order)
         public_numbers = key.public_numbers()
         Qx = public_numbers.x
         Qy = public_numbers.y
         # cryptography doesn't generally provide curve parameters/order for custom curves here.
-        flash(f"Parsed EC public key (tiny curve allowed): Qx={Qx}, Qy={Qy}, curve_size={key_size} bits. Note: automatic attack for generic EC PEM is limited in this demo.")
+        msg = f"Parsed EC public key: Qx={Qx}, Qy={Qy}, curve_size={key_size} bits. Note: automatic attack for generic EC PEM is limited in this demo."
+        if wants_json():  # ← AJAX path
+            return jsonify({"status": "ok", "message": msg})
+        flash(msg)
         # We don't attempt automatic attack here unless you also provide curve params (use /attack_toy_ecc for that)
         return redirect(url_for("index"))
     except AttributeError:
@@ -193,44 +148,64 @@ def generate_toy_ecc():
 
 @app.route("/attack_toy_ecc", methods=["POST"])
 def attack_toy_ecc():
-    """
-    Accept toy ECC parameters from a form and brute force d mod r.
-    Required form fields: p,a,b,Gx,Gy,r,Qx,Qy
-    Safety: refuse if p.bit_length() > 64 or r > 10_000 (safety/time).
-    """
     try:
-        p = safe_int_from_form("p")
-        a = safe_int_from_form("a")
-        b = safe_int_from_form("b")
-        Gx = safe_int_from_form("Gx")
-        Gy = safe_int_from_form("Gy")
-        r = safe_int_from_form("r")
-        Qx = safe_int_from_form("Qx")
-        Qy = safe_int_from_form("Qy")
-        if None in (p,a,b,Gx,Gy,r,Qx,Qy):
-            flash("Missing toy ECC parameters; please provide p,a,b,Gx,Gy,r,Qx,Qy")
-            return redirect(url_for("index"))
+        def safe_int(v):
+            try:
+                return int(v, 0) if isinstance(v, str) else int(v)
+            except Exception:
+                return None
 
-        if is_too_large_bitlen(p, limit=64):
-            flash("Field size too large for lab demo (p.bit_length() > 64). Refusing.")
-            return redirect(url_for("index"))
+        fields = ("p","a","b","Gx","Gy","r","Qx","Qy")
+        vals = {k: safe_int(request.form.get(k)) for k in fields}
+        if any(vals[k] is None for k in fields):
+            msg = "Missing toy ECC parameters; provide p,a,b,Gx,Gy,r,Qx,Qy"
+            if wants_json(): return jsonify({"status":"error","message":msg}), 400
+            flash(msg); return redirect(url_for("index"))
 
-        if r > 10000:
-            flash("Order r too large for naive brute force in demo (r > 10000). Refusing.")
-            return redirect(url_for("index"))
+        p,a,b,Gx,Gy,r,Qx,Qy = (vals[k] for k in fields)
 
-        # construct curve and points using ecdsa
+        if int(p).bit_length() > 64:
+            msg = "Field size too large for demo (p.bit_length() > 64). Refusing."
+            if wants_json(): return jsonify({"status":"error","message":msg}), 400
+            flash(msg); return redirect(url_for("index"))
+
+        if r > 10_000:
+            msg = "Order r too large for naive brute force in demo (r > 10000). Refusing."
+            if wants_json(): return jsonify({"status":"error","message":msg}), 400
+            flash(msg); return redirect(url_for("index"))
+
         curve = ellipticcurve.CurveFp(p, a, b)
         G = ellipticcurve.Point(curve, Gx, Gy, r)
         Q = ellipticcurve.Point(curve, Qx, Qy, r)
 
+        # Run attack
         k, steps, elapsed = brute_force_d_mod_r(curve, G, Q, r)
+
+        if wants_json():
+            # Send structured result + a human message
+            if k is None:
+                return jsonify({
+                    "status":"ok",
+                    "message": f"Brute-force failed within r={r}. Tried {steps} steps in {elapsed:.3f}s.",
+                    "result": {"found": False, "r": r, "steps": steps, "elapsed": elapsed}
+                })
+            else:
+                return jsonify({
+                    "status":"ok",
+                    "message": f"Found d mod r = {k} (r={r}) in {steps} steps, {elapsed:.3f}s.",
+                    "result": {"found": True, "k": k, "r": r, "steps": steps, "elapsed": elapsed}
+                })
+
+        # Non-AJAX fallback
         if k is None:
-            flash(f"Brute-force did not find d mod r within r ({r}) steps. Steps tried: {steps}, elapsed {elapsed:.3f}s")
+            flash(f"Brute-force failed within r={r}. Tried {steps} steps in {elapsed:.3f}s.")
         else:
-            flash(f"Found d mod r = {k} (r={r}) in {steps} steps, {elapsed:.3f}s")
+            flash(f"Found d mod r = {k} (r={r}) in {steps} steps, {elapsed:.3f}s.")
         return redirect(url_for("index"))
+
     except Exception as e:
+        if wants_json():
+            return jsonify({"status":"error","message":"Error during ECC attack: " + str(e)}), 500
         flash("Error during ECC attack: " + str(e))
         return redirect(url_for("index"))
 
