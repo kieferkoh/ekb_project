@@ -2,7 +2,7 @@
 from flask import Flask, request, render_template, flash, redirect, url_for, jsonify
 from lab.rsa.fermat_factor import fermat_factor
 from lab.rsa.weak_rsa_gen import gen_weak_rsa
-from lab.ecc.weak_ecc_gen import safe_int_from_form, brute_force_d_mod_r, make_toy_curve_and_key
+from ..ecc.weak_ecc_gen import safe_int_from_form, brute_force_d_mod_r, make_toy_curve_and_key
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa as rsa_mod
@@ -37,7 +37,6 @@ def _build_public_pem(n: int, e: int = 65537) -> bytes:
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
-
 
 def _fmt_scientific(x):
     # format huge numbers cleanly for display
@@ -318,5 +317,4 @@ def attack_toy_ecc():
 if __name__ == "__main__":
     # In production you should use gunicorn/uwsgi and not debug=True
     app.run(debug=True, host="127.0.0.1", port=5000)
-    print(app.url_map)
 
