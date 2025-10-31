@@ -79,11 +79,112 @@
                 </button>
               </div>
 
+<<<<<<< Updated upstream
               <div class="mt-2 small-muted">
                 Refuses keys &gt; 64 bits. Use the **Generate toy RSA** button to auto-fill a PEM that this lab can process.
               </div>
             </form>
           </div>
+=======
+                <!-- Toy ECC generator + attack -->
+                <div class="card mb-3">
+                    <div class="card-header"><strong>3) Toy ECC demo (canned example)</strong></div>
+                    <div class="card-body">
+                        <p class="small-muted">
+                            Use the server-generated toy ECC parameters and run the brute-force demo that finds
+                            <code>d mod r</code>. Pick a difficulty before generating.
+                        </p>
+
+                        <!-- Difficulty picker -->
+                        <div class="d-flex align-items-center gap-3 mb-2">
+                            <div class="btn-group" role="group" aria-label="ECC difficulty">
+                                <input type="radio" class="btn-check" name="ecc_difficulty" id="diff_easy" autocomplete="off" value="easy">
+                                <label class="btn btn-outline-secondary" for="diff_easy">Easy</label>
+
+                                <input type="radio" class="btn-check" name="ecc_difficulty" id="diff_medium" autocomplete="off" value="medium" checked>
+                                <label class="btn btn-outline-secondary" for="diff_medium">Medium</label>
+
+                                <input type="radio" class="btn-check" name="ecc_difficulty" id="diff_hard" autocomplete="off" value="hard">
+                                <label class="btn btn-outline-secondary" for="diff_hard">Hard</label>
+                            </div>
+
+                            <button id="btn_gen_toy" type="button" class="btn btn-outline-secondary">
+                              Generate Toy ECC (AJAX)
+                            </button>
+                            <span id="gen_note" class="ms-2 small text-muted"></span>
+                        </div>
+
+                        <!-- Optional: show returned hint/factors -->
+                        <div id="toy_attack_hint" class="small text-muted mb-2"></div>
+
+                        <form id="attackToyForm" method="post" action="{{ url_for('attack_toy_ecc') }}">
+                            <div class="row g-2">
+                                <div class="col-md-3">
+                                    <label class="form-label">p</label>
+                                    <input id="p" name="p" class="form-control form-control-sm" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">a</label>
+                                    <input id="a" name="a" class="form-control form-control-sm" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">b</label>
+                                    <input id="b" name="b" class="form-control form-control-sm" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">r (order)</label>
+                                    <input id="r" name="r" class="form-control form-control-sm" />
+                                </div>
+                            </div>
+
+                            <div class="row g-2 mt-2">
+                                <div class="col-md-3">
+                                    <label class="form-label">Gx</label>
+                                    <input id="Gx" name="Gx" class="form-control form-control-sm" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Gy</label>
+                                    <input id="Gy" name="Gy" class="form-control form-control-sm" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Qx</label>
+                                    <input id="Qx" name="Qx" class="form-control form-control-sm" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Qy</label>
+                                    <input id="Qy" name="Qy" class="form-control form-control-sm" />
+                                </div>
+                            </div>
+
+                            <div class="mt-3">
+                                <button id="btn_attack_toy" class="btn btn-danger" type="submit">
+          Run toy ECC attack (brute-force d mod r)
+        </button>
+                                <button id="btn_clear" type="button" class="btn btn-outline-secondary ms-2">Clear</button>
+                            </div>
+                            <div class="mt-2 small-muted">
+                                Safety limits: server will refuse field sizes &gt; 64 bits, and r &gt; 10000.
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="col-md-4">
+                <div class="card mb-3">
+                    <div class="card-header"><strong>Quick guide</strong></div>
+                    <div class="card-body small">
+                        <ol>
+                            <li>Use <strong>Generate ECC PEM</strong> to get a standard P-256 keypair, then test the parser in section 2.</li>
+                            <li>Use <strong>Generate Toy ECC</strong> to get tiny parameters for the brute-force demo.</li>
+                            <li>For RSA, paste a tiny RSA <code>N</code> PEM (≤64 bits) and run the Fermat demo.</li>
+                        </ol>
+                        <p class="mb-0"><strong>Tip:</strong> Keep the app on localhost and do not expose it publicly.</p>
+                    </div>
+                </div>
+            </div>
+>>>>>>> Stashed changes
         </div>
 
         <!-- ECC PEM form -->
@@ -208,6 +309,7 @@
       </div>
     </div>
 
+<<<<<<< Updated upstream
   </div>
 
   <script>
@@ -235,6 +337,76 @@
         ['p', 'a', 'b', 'Gx', 'Gy', 'r', 'Qx', 'Qy'].forEach(k => {
           const el = document.getElementById(k);
           if (el) el.value = t[k];
+=======
+    <script>
+        /* ===== Toy ECC fetch/populate ===== */
+        function getSelectedDifficulty() {
+            const el = document.querySelector('input[name="ecc_difficulty"]:checked');
+            return el ? el.value : 'medium';
+        }
+
+        document.getElementById('btn_gen_toy').addEventListener('click', async function() {
+            const btn = this;
+            const note = document.getElementById('gen_note');
+            const hintBox = document.getElementById('toy_attack_hint');
+
+            btn.disabled = true;
+            note.textContent = 'Generating...';
+            hintBox.textContent = '';
+
+            try {
+                // Pass difficulty as a query param
+                const diff = getSelectedDifficulty() || 'medium';
+                base = '{{ url_for("generate_toy_ecc") }}';
+                const url = `${base}?difficulty=${encodeURIComponent(diff)}`;
+                console.log(url)
+                const resp = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    },
+                    cache: 'no-store',
+                    credentials: 'same-origin'
+                });
+                if (!resp.ok) {
+                    const txt = await resp.text().catch(() => '');
+                    throw new Error(`HTTP ${resp.status}: ${txt.slice(0,200)}`);
+                }
+                const js = await resp.json();
+                if (js.status !== 'ok') throw new Error(js.msg || 'failed');
+
+                const t = js.toy;
+                ['p', 'a', 'b', 'Gx', 'Gy', 'r', 'Qx', 'Qy'].forEach(k => {
+                    const el = document.getElementById(k);
+                    if (el && k in t) el.value = t[k];
+                });
+
+                // Optional: show difficulty + attack hint / factorization if provided
+                const parts = [];
+                if (t.attack_hint) parts.push(t.attack_hint);
+                if (t.r_factors) {
+                    // r_factors can be {"prime": true} or {prime: exp, ...}
+                    if (t.r_factors.prime) {
+                        parts.push('Order r is prime.');
+                    } else {
+                        const fac = Object.entries(t.r_factors)
+                            .map(([p, e]) => (e > 1 ? `${p}^${e}` : `${p}`))
+                            .join(' · ');
+                        parts.push(`r factorization: ${fac}`);
+                    }
+                }
+                hintBox.textContent = parts.length ? `Difficulty: ${diff}. ${parts.join(' · ')}` : `Difficulty: ${diff}.`;
+
+                note.textContent = 'Toy ECC params loaded.';
+            } catch (err) {
+                console.error(err);
+                note.textContent = 'Error: ' + err.message;
+                alert('Could not generate toy ECC: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                setTimeout(() => note.textContent = '', 6000);
+            }
+>>>>>>> Stashed changes
         });
         document.getElementById('gen_note').textContent = 'Toy ECC params loaded into the form below.';
       } catch (err) {
@@ -307,6 +479,7 @@
       });
     });
 
+<<<<<<< Updated upstream
     /* ===== Inline messaging ===== */
     function showMessage(status, text) {
       const box = document.getElementById('msg_area');
@@ -362,6 +535,83 @@
         }
       });
     }
+=======
+            form.addEventListener('submit', async(evt) => {
+                        if (extraChecksFn && extraChecksFn(evt) === false) return;
+
+                        evt.preventDefault(); // no page reload
+                        const submitBtn = form.querySelector('button[type="submit"]');
+                        if (submitBtn) submitBtn.disabled = true;
+
+                        try {
+                            const resp = await fetch(form.action, {
+                                method: 'POST',
+                                body: new FormData(form),
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                    'Accept': 'application/json'
+                                }
+                            });
+
+                            // Try to parse JSON; fall back to text
+                            let payload = null;
+                            let textBody = null;
+                            const ct = (resp.headers.get('Content-Type') || '').toLowerCase();
+
+                            if (ct.includes('application/json')) {
+                                try {
+                                    payload = await resp.json();
+                                } catch { /* ignore */ }
+                            }
+                            if (!payload) {
+                                try {
+                                    textBody = await resp.text();
+                                } catch {
+                                    textBody = '';
+                                }
+                            }
+
+                            if (!resp.ok) {
+                                const errMsg =
+                                    (payload && (payload.msg || payload.message)) ||
+                                    textBody ||
+                                    `HTTP ${resp.status}`;
+                                showMessage('error', errMsg);
+                                return;
+                            }
+
+                            // Build final message and status
+                            let status = (payload && payload.status) || 'ok';
+                            let message = (payload && (payload.message || payload.msg)) || (textBody || 'Done.');
+
+                            // Append estimates block if provided
+                            if (payload && payload.estimates) {
+                                const e = payload.estimates;
+                                // Guard against missing fields
+                                const sqrtFmt = e.sqrt_ops_fmt || '';
+                                const memFmt = e.bsgs_mem_points_fmt || '';
+                                const y1 = e.rates && e.rates[0] ? Number(e.rates[0].years).toExponential(2) : '';
+                                const y2 = e.rates && e.rates[1] ? Number(e.rates[1].years).toExponential(2) : '';
+                                const extra = `
+          <div class="small text-muted mt-1">
+            <div>sqrt(n) ops ≈ ${sqrtFmt}</div>
+            <div>BSGS memory ≈ ${memFmt} points</div>
+            ${y1 ? `<div>@1e9 ops/s ≈ ${y1} years</div>` : ''}
+            ${y2 ? `<div>@1e12 ops/s ≈ ${y2} years</div>` : ''}
+          </div>`;
+        message = message + extra;
+      }
+
+      showMessage(status, message); // ← single call
+
+    } catch (e) {
+      showMessage('error', e?.message || 'Network error');
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  });
+}
+>>>>>>> Stashed changes
 
     /* Hook up forms (no refresh) */
     ajaxifyForm('form_upload_rsa');

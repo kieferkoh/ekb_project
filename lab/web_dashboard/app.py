@@ -39,6 +39,40 @@ def _build_public_pem(n: int, e: int = 65537) -> bytes:
     )
 
 
+def _fmt_scientific(x):
+    # format huge numbers cleanly for display
+    from math import log10, floor
+    if x == 0:
+        return "0"
+    exp = floor(log10(x))
+    mant = x / (10 ** exp)
+    return f"{mant:.2f}e{exp}"
+
+def estimate_dlog_cost(bits, ops_per_sec_list=(1e9, 1e12)):
+    """
+    bits: order bits (≈ curve key_size for named NIST curves)
+    Returns printable numbers for Pollard-rho/BSGS at various throughputs.
+    """
+    import math
+    sqrt_ops = 2 ** (bits / 2.0)  # ~ operations for rho or BSGS
+    mem_ops  = sqrt_ops          # memory footprint for BSGS entries (points)
+    estimates = []
+    for r in ops_per_sec_list:
+        seconds = sqrt_ops / r
+        years   = seconds / (60*60*24*365.2425)
+        estimates.append({
+            "rate_ops_per_sec": r,
+            "seconds": seconds,
+            "years": years
+        })
+    return {
+        "sqrt_ops": sqrt_ops,
+        "sqrt_ops_fmt": _fmt_scientific(sqrt_ops),
+        "bsgs_mem_points": mem_ops,
+        "bsgs_mem_points_fmt": _fmt_scientific(mem_ops),
+        "rates": estimates
+    }
+
 # -----------------------
 # Routes
 # -----------------------
@@ -132,6 +166,7 @@ def upload_rsa():
 
 @app.route("/generate_named_ecc_pem", methods=["GET"])
 def generate_named_ecc_pem():
+    print("test")
     # Generate standard, interoperable ECC keys (P-256)
     sk = ec.generate_private_key(ec.SECP256R1())
     pk = sk.public_key()
@@ -150,62 +185,69 @@ def generate_named_ecc_pem():
 
 @app.route("/upload_ecc", methods=["POST"])
 def upload_ecc():
-    """
-    Accept a PEM-encoded EC public key, parse it, and (safely) attempt a toy brute-force
-    if the curve key_size <= 64. Otherwise refuse.
-    """
-    pem_data = request.form.get("pem")
-    accept = request.form.get("accept")
+    pem_data = request.form.get("pem", "")
+    from cryptography.hazmat.primitives import serialization
     try:
-        key = load_pem_public_key(pem_data.encode())
+        key = serialization.load_pem_public_key(pem_data.encode())
     except Exception as e:
-        flash("Failed to parse PEM: "+str(e))
-        return redirect(url_for("index"))
+        msg = "Failed to parse PEM: " + str(e)
+        if wants_json(): return jsonify({"status":"error","message":msg}), 400
+        flash(msg); return redirect(url_for("index"))
 
-    # Check if it's an EC public key and inspect curve size
-    try:
-        curve = key.curve  # cryptography object has .key_size
-        key_size = getattr(curve, "key_size", None)
-        if key_size is None:
-            flash("Could not determine curve key size; refusing to proceed.")
-            return redirect(url_for("index"))
-        # if key_size > 64:
-        #     flash(f"EC key size {key_size} bits is too large for lab demo. Refusing to run attacks.")
-        #     return redirect(url_for("index"))
-        # If small, try to bruteforce d modulo small order if order known (cryptography may not expose order)
-        public_numbers = key.public_numbers()
-        Qx = public_numbers.x
-        Qy = public_numbers.y
-        # cryptography doesn't generally provide curve parameters/order for custom curves here.
-        msg = f"Parsed EC public key: Qx={Qx}, Qy={Qy}, curve_size={key_size} bits. Note: automatic attack for generic EC PEM is limited in this demo."
-        if wants_json():  # ← AJAX path
-            return jsonify({"status": "ok", "message": msg})
-        flash(msg)
-        # We don't attempt automatic attack here unless you also provide curve params (use /attack_toy_ecc for that)
-        return redirect(url_for("index"))
-    except AttributeError:
-        flash("Not an EC public key.")
-        return redirect(url_for("index"))
+    from cryptography.hazmat.primitives.asymmetric import ec as _ec
+    if not isinstance(key, _ec.EllipticCurvePublicKey):
+        msg = "Not an EC public key."
+        if wants_json(): return jsonify({"status":"error","message":msg}), 400
+        flash(msg); return redirect(url_for("index"))
+
+    curve = key.curve
+    bits  = getattr(curve, "key_size", None)  # 256 for SECP256R1, 384 for SECP384R1, etc.
+    if bits is None:
+        msg = "Could not determine curve key size; refusing to proceed."
+        if wants_json(): return jsonify({"status":"error","message":msg}), 400
+        flash(msg); return redirect(url_for("index"))
+
+    pn = key.public_numbers()
+    Qx, Qy = pn.x, pn.y
+
+    # Build the infeasibility message
+    est = estimate_dlog_cost(bits)
+    msg = "Conclusion: infeasible. The lab will refuse any attack on curves > 64 bits."
+
+    if wants_json():
+        return jsonify({
+            "status": "ok",
+            "message": msg,
+            "curve_bits": bits,
+            "curve_name": type(curve).__name__,
+            "Qx": Qx, "Qy": Qy,
+            "estimates": est
+        })
+
+    flash(msg)
+    return redirect(url_for("index"))
 
 @app.route("/generate_toy_ecc", methods=["GET"])
 def generate_toy_ecc():
-    """
-    Returns a JSON with toy curve parameters and keypair that the UI can use as a canned example.
-    """
     try:
-        data = make_toy_curve_and_key()
-        # hide private key by default in UI; include it if needed for demonstration
+        difficulty = request.args.get("difficulty", "medium")  # <-- read choice
+        data = make_toy_curve_and_key(difficulty=difficulty, prefer_prime=False)   # <-- pass through
         return jsonify({
             "status": "ok",
             "toy": {
                 "p": data["p"], "a": data["a"], "b": data["b"],
-                "Gx": data["Gx"], "Gy": data["Gy"], "r": data["r"],
-                "Qx": data["Qx"], "Qy": data["Qy"]
-            },
-            "note": "This is a canned toy curve & public key. Use /attack_toy_ecc to run the demo attack. Keep experiments local."
+                "Gx": int(data["Gx"]), "Gy": int(data["Gy"]),
+                "r": int(data["r"]),
+                "Qx": int(data["Qx"]), "Qy": int(data["Qy"]),
+                # nice-to-have fields for the hint (if your generator returns them)
+                "attack_hint": data.get("attack_hint"),
+                "r_factors": data.get("r_factors"),
+            }
         })
-    except Exception as e:
-        return jsonify({"status": "error", "msg": str(e)}), 500
+    except ValueError as e: 
+        return jsonify({"status":"error","msg":str(e)}), 400
+
+
 
 @app.route("/attack_toy_ecc", methods=["POST"])
 def attack_toy_ecc():
@@ -276,3 +318,5 @@ def attack_toy_ecc():
 if __name__ == "__main__":
     # In production you should use gunicorn/uwsgi and not debug=True
     app.run(debug=True, host="127.0.0.1", port=5000)
+    print(app.url_map)
+
